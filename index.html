@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>물품 체크리스트</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Malgun Gothic", sans-serif;
+    max-width: 480px;
+    margin: 40px auto;
+    padding: 0 16px;
+    background: #f5f6f8;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
+  form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  #item-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #d0d3d9;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  #add-btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #add-btn:hover { background: #1d4ed8; }
+  #add-btn:disabled { background: #a9bce8; cursor: not-allowed; }
+  ul#list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  li.item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  li.item .label {
+    flex: 1;
+    font-size: 14px;
+  }
+  li.item.checked .label {
+    text-decoration: line-through;
+    color: #9ca3af;
+  }
+  li.item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+  li.item .delete-btn {
+    border: none;
+    background: transparent;
+    color: #ef4444;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  li.item .delete-btn:hover { text-decoration: underline; }
+  #empty-msg {
+    color: #9ca3af;
+    font-size: 13px;
+    text-align: center;
+    padding: 20px 0;
+  }
+  #status {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 12px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+  <h1>물품 체크리스트</h1>
+  <div class="subtitle">여행/준비물 등을 추가하고 체크하세요</div>
+
+  <form id="add-form">
+    <input type="text" id="item-input" placeholder="물품 이름 입력" autocomplete="off" />
+    <button type="submit" id="add-btn">추가</button>
+  </form>
+
+  <ul id="list"></ul>
+  <div id="empty-msg" style="display:none;">아직 등록된 물품이 없습니다.</div>
+  <div id="status">총 0개 · 완료 0개</div>
+
+<script>
+  const STORAGE_KEY = "checklist-items";
+  const form = document.getElementById("add-form");
+  const input = document.getElementById("item-input");
+  const list = document.getElementById("list");
+  const emptyMsg = document.getElementById("empty-msg");
+  const status = document.getElementById("status");
+
+  function loadItems() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveItems(items) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }
+
+  let items = loadItems();
+
+  function render() {
+    list.innerHTML = "";
+    if (items.length === 0) {
+      emptyMsg.style.display = "block";
+    } else {
+      emptyMsg.style.display = "none";
+    }
+    items.forEach(item => {
+      const li = document.createElement("li");
+      li.className = "item" + (item.checked ? " checked" : "");
+      li.dataset.id = item.id;
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = item.checked;
+      checkbox.setAttribute("aria-label", item.name + " 체크");
+      checkbox.addEventListener("change", () => toggleItem(item.id));
+
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = item.name;
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "delete-btn";
+      delBtn.textContent = "삭제";
+      delBtn.setAttribute("aria-label", item.name + " 삭제");
+      delBtn.addEventListener("click", () => deleteItem(item.id));
+
+      li.appendChild(checkbox);
+      li.appendChild(label);
+      li.appendChild(delBtn);
+      list.appendChild(li);
+    });
+
+    const doneCount = items.filter(i => i.checked).length;
+    status.textContent = `총 ${items.length}개 · 완료 ${doneCount}개`;
+  }
+
+  function addItem(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    items.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 7), name: trimmed, checked: false });
+    saveItems(items);
+    render();
+  }
+
+  function toggleItem(id) {
+    items = items.map(i => i.id === id ? { ...i, checked: !i.checked } : i);
+    saveItems(items);
+    render();
+  }
+
+  function deleteItem(id) {
+    items = items.filter(i => i.id !== id);
+    saveItems(items);
+    render();
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addItem(input.value);
+    input.value = "";
+    input.focus();
+  });
+
+  render();
+</script>
+</body>
+</html>
