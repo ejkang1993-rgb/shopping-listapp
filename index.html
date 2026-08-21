@@ -67,6 +67,9 @@
     height: 18px;
     cursor: pointer;
   }
+  li.item.pending {
+    opacity: 0.6;
+  }
   li.item .delete-btn {
     border: none;
     background: transparent;
@@ -76,6 +79,7 @@
     padding: 4px 8px;
   }
   li.item .delete-btn:hover { text-decoration: underline; }
+  li.item .delete-btn:disabled { color: #f3a8a8; cursor: not-allowed; }
   #empty-msg {
     color: #9ca3af;
     font-size: 13px;
@@ -88,11 +92,23 @@
     margin-top: 12px;
     text-align: right;
   }
+  #error-msg {
+    display: none;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
 </style>
 </head>
 <body>
   <h1>물품 체크리스트</h1>
   <div class="subtitle">여행/준비물 등을 추가하고 체크하세요</div>
+
+  <div id="error-msg"></div>
 
   <form id="add-form">
     <input type="text" id="item-input" placeholder="물품 이름 입력" autocomplete="off" />
@@ -103,28 +119,50 @@
   <div id="empty-msg" style="display:none;">아직 등록된 물품이 없습니다.</div>
   <div id="status">총 0개 · 완료 0개</div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-  const STORAGE_KEY = "checklist-items";
+  // Supabase project connection info (safe to expose client-side: this is the
+  // public anon/publishable key, access is restricted by Row Level Security).
+  const SUPABASE_URL = "https://jpqkkwldlemtgxpuzulz.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_neto7INqLjJ3k4oNJfbTZA_FSlrAykn";
+  const TABLE = "shopping_items";
+
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
   const form = document.getElementById("add-form");
   const input = document.getElementById("item-input");
+  const addBtn = document.getElementById("add-btn");
   const list = document.getElementById("list");
   const emptyMsg = document.getElementById("empty-msg");
   const status = document.getElementById("status");
+  const errorMsg = document.getElementById("error-msg");
 
-  function loadItems() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
+  let items = [];
+
+  function showError(message) {
+    errorMsg.textContent = message;
+    errorMsg.style.display = "block";
+  }
+
+  function clearError() {
+    errorMsg.style.display = "none";
+    errorMsg.textContent = "";
+  }
+
+  async function loadItems() {
+    const { data, error } = await supabaseClient
+      .from(TABLE)
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      showError("목록을 불러오지 못했습니다: " + error.message);
+      return;
     }
+    clearError();
+    items = data;
+    render();
   }
-
-  function saveItems(items) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }
-
-  let items = loadItems();
 
   function render() {
     list.innerHTML = "";
@@ -165,24 +203,68 @@
     status.textContent = `총 ${items.length}개 · 완료 ${doneCount}개`;
   }
 
-  function addItem(name) {
+  async function addItem(name) {
     const trimmed = name.trim();
     if (!trimmed) return;
-    items.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 7), name: trimmed, checked: false });
-    saveItems(items);
+
+    addBtn.disabled = true;
+    const { data, error } = await supabaseClient
+      .from(TABLE)
+      .insert({ name: trimmed, checked: false })
+      .select()
+      .single();
+    addBtn.disabled = false;
+
+    if (error) {
+      showError("항목을 추가하지 못했습니다: " + error.message);
+      return;
+    }
+    clearError();
+    items.push(data);
     render();
   }
 
-  function toggleItem(id) {
-    items = items.map(i => i.id === id ? { ...i, checked: !i.checked } : i);
-    saveItems(items);
+  async function toggleItem(id) {
+    const target = items.find(i => i.id === id);
+    if (!target) return;
+    const nextChecked = !target.checked;
+
+    // Optimistic update
+    items = items.map(i => i.id === id ? { ...i, checked: nextChecked } : i);
     render();
+
+    const { error } = await supabaseClient
+      .from(TABLE)
+      .update({ checked: nextChecked })
+      .eq("id", id);
+
+    if (error) {
+      showError("항목을 갱신하지 못했습니다: " + error.message);
+      // Revert on failure
+      items = items.map(i => i.id === id ? { ...i, checked: !nextChecked } : i);
+      render();
+      return;
+    }
+    clearError();
   }
 
-  function deleteItem(id) {
+  async function deleteItem(id) {
+    const previous = items;
     items = items.filter(i => i.id !== id);
-    saveItems(items);
     render();
+
+    const { error } = await supabaseClient
+      .from(TABLE)
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      showError("항목을 삭제하지 못했습니다: " + error.message);
+      items = previous;
+      render();
+      return;
+    }
+    clearError();
   }
 
   form.addEventListener("submit", (e) => {
@@ -192,7 +274,7 @@
     input.focus();
   });
 
-  render();
+  loadItems();
 </script>
 </body>
 </html>
